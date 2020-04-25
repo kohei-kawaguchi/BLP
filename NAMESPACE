@@ -1,0 +1,4 @@
+useDynLib(HighBLP)
+import(RcppEigen)
+importFrom(Rcpp, evalCpp)
+exportPattern("^[[:alpha:]]+")
