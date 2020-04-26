@@ -93,6 +93,8 @@ price <-
 
     return(price_t)
   }
+# use mc as instrumental variables
+Z <- mc
 
 #---------------#
 # set parameters
@@ -105,27 +107,80 @@ beta <- matrix(rnorm(K))
 sigma_upsilon <- 0.1
 # standard deviation of taste for X
 sigma_nu <- exp(rnorm(K))
+# bundle parameters
+theta_linear <- matrix(c(beta, alpha))
+theta_nonlinear <- matrix(c(sigma_nu, sigma_upsilon))
 
 #-------------------------------#
 # simulate endogenous vavriables
 #-------------------------------#
+# compute mean utility
+mean_utility <- compute_mean_utility(beta, alpha, X, price, xi)
+
 # compute individual utility
 individual_utility <-
-  compute_individual_utility(beta, alpha, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+  compute_individual_utility(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
 
+# compute individual share
+individual_share <-
+  compute_individual_share(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
 
+# compute share
+share <- compute_share(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
 
+# compute invidual utility from delta
+individual_utility_delta <- 
+  compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+max(abs(unlist(individual_utility) - unlist(individual_utility_delta)))
 
+# compute individual share from delta
+individual_share_delta <- 
+  compute_individual_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+max(abs(unlist(individual_share) - unlist(individual_share_delta)))
 
+# compute share
+share_delta <- 
+  compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+max(abs(unlist(share_delta) - unlist(share)))
 
+# invert share
+mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
 
+# make initial weight
+X_vec <- 
+  X %>%
+  purrr::reduce(rbind)
+Z_vec <-
+  Z %>%
+  purrr::reduce(rbind)
+XZ <- cbind(X_vec, Z_vec)
+W <- crossprod(XZ, XZ)
 
+# estimate the linear parameters
+theta_linear_hat <- estimate_linear_parameters(mean_utility, X, price, Z, W)
+max(abs(theta_linear_hat - theta_linear))
 
+# elicit xi
+xi_hat <- elicit_xi(theta_linear_hat, mean_utility, X, price)
 
+# compute moments
+moments <- compute_moments(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W)
 
+# compute objective function
+objective <- compute_objective(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W)
 
+# estiamte parameters
+solution <- estimate_parameters(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W) 
+theta_nonlinear_hat <- solution$par
+max(abs(theta_nonlinear_hat - theta_nonlinear))
 
-
+# initial mean_utility
+initial_mean_utility <-
+  share %>%
+  purrr::map(., ~ log(. / (1 - sum(.))))
+solution <- estimate_parameters(theta_nonlinear, share, initial_mean_utility, X, price, Z, nu, upsilon, W) 
+theta_nonlinear_hat <- solution$par
+max(abs(theta_nonlinear_hat - theta_nonlinear))
 
 
 
