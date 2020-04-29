@@ -1,12 +1,13 @@
 # compute mean utility
 compute_mean_utility <-
-  function(beta, alpha, X, price, xi) {
+  function(beta, alpha, X, p, xi) {
     mean_indirect_utility <-
       foreach (t = 1:length(X)) %do% {
         X_t <- X[[t]]
-        price_t <- price[[t]]
+        p_t <- p[[t]]
+        xi_t <- xi[[t]]
         mean_indirect_utility_t <-
-          X_t %*% beta + price_t * alpha
+          X_t %*% beta + p_t * alpha + xi_t
         return(mean_indirect_utility_t)
       }
     return(mean_indirect_utility)
@@ -15,21 +16,20 @@ compute_mean_utility <-
 # compute invidual utility
 compute_individual_utility <-
   function(beta, alpha, sigma_nu, sigma_upsilon,
-           X, price, xi, nu, upsilon) {
+           X, p, xi, nu, upsilon) {
     # copute mean utility
-    mean_utility <- compute_mean_utility(beta, alpha, X, price, xi)
+    mean_utility <- compute_mean_utility(beta, alpha, X, p, xi)
     # add individual tastes
     utility <-
       foreach (t = 1:length(X)) %do% {
         X_t <- X[[t]]
-        price_t <- price[[t]]
+        p_t <- p[[t]]
         nu_t <- nu[[t]]
-        xi_t <- xi[[t]]
         upsilon_t <- upsilon[[t]]
         mean_utility_t <- mean_utility[[t]]
         shock_utility_t <- 
           X_t %*% diag(sigma_nu) %*% nu_t +
-          price_t %*% sigma_upsilon %*% upsilon_t
+          p_t %*% sigma_upsilon %*% upsilon_t
         utility_t <-
           mean_utility_t %*% t(rep(1, ncol(nu_t))) +
           shock_utility_t
@@ -40,16 +40,16 @@ compute_individual_utility <-
 
 # compute individual share
 compute_individual_share <-
-  function(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon) {
+  function(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon) {
     # compute individual utility
     individual_utility <-
-      compute_individual_utility(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
+      compute_individual_utility(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
     # compute individual shareindividual_utility
     individual_share <-
       foreach (t = 1:length(individual_utility)) %do% {
         individual_utility_t <- individual_utility[[t]]
         individual_share_t <- exp(individual_utility_t) 
-        denominator_t <- matrix(apply(1 + individual_share_t, 2, sum), nrow = 1)
+        denominator_t <- 1 + matrix(apply(individual_share_t, 2, sum), nrow = 1)
         denominator_t <- matrix(rep(1, nrow(individual_share_t))) %*% denominator_t
         individual_share_t <- individual_share_t / denominator_t
         return(individual_share_t)
@@ -59,10 +59,10 @@ compute_individual_share <-
 
 # compute share
 compute_share <-
-  function(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon) {
+  function(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon) {
     # compute individual share
     individual_share <-
-      compute_individual_share(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
+      compute_individual_share(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
     # compute share
     share <-
       individual_share %>%
@@ -73,17 +73,17 @@ compute_share <-
 
 # compute invidual utility from delta
 compute_individual_utility_delta <-
-  function(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon) {
+  function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
     indirect_utility <-
       foreach (t = 1:length(mean_utility)) %do% {
         X_t <- X[[t]]
-        price_t <- price[[t]]
+        p_t <- p[[t]]
         nu_t <- nu[[t]]
         upsilon_t <- upsilon[[t]]
         mean_indirect_utility_t <- mean_utility[[t]]
         shock_indirect_utility_t <- 
           X_t %*% diag(sigma_nu) %*% nu_t +
-          price_t %*% sigma_upsilon %*% upsilon_t
+          p_t %*% sigma_upsilon %*% upsilon_t
         indirect_utility_t <-
           mean_indirect_utility_t %*% t(rep(1, ncol(nu_t))) +
           shock_indirect_utility_t
@@ -94,10 +94,10 @@ compute_individual_utility_delta <-
 
 # compute individual share from delta
 compute_individual_share_delta <-
-  function(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon) {
+  function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
     # compute individual utility
     individual_utility <-
-      compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+      compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
     # compute individual shareindividual_utility
     individual_share <-
       foreach (t = 1:length(individual_utility)) %do% {
@@ -113,10 +113,10 @@ compute_individual_share_delta <-
 
 # compute share
 compute_share_delta <-
-  function(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon) {
+  function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
     # compute individual share
     individual_share <-
-      compute_individual_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+      compute_individual_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
     # compute share
     share <-
       individual_share %>%
@@ -127,12 +127,12 @@ compute_share_delta <-
 
 # invert share
 invert_share <-
-  function(share, mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon) {
+  function(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
     # distance 
     distance <- 100
     while (distance > 1e-8) {
       share_delta <- 
-        compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+        compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
       update <-
         purrr::map2(share, share_delta, ~ log(.x) - log(.y))
       mean_utility <- 
@@ -144,20 +144,20 @@ invert_share <-
 
 # estimate the linear parameters
 estimate_linear_parameters <-
-  function(mean_utility, X, price, Z, W) {
+  function(mean_utility, X, p, Z, W) {
     mean_utility_vec <- 
       mean_utility %>%
       purrr::reduce(rbind)
     X_vec <- 
       X %>%
       purrr::reduce(rbind)
-    price_vec <-
-      price %>%
+    p_vec <-
+      p %>%
       purrr::reduce(rbind)
     Z_vec <-
       Z %>%
       purrr::reduce(rbind)
-    XP <- cbind(X_vec, price_vec)
+    XP <- cbind(X_vec, p_vec)
     XZ <- cbind(X_vec, Z_vec)
     W <- crossprod(XZ, XZ)
     A <- crossprod(XP, XZ) %*% solve(W, crossprod(XZ, XP))
@@ -168,13 +168,13 @@ estimate_linear_parameters <-
 
 # elicit xi
 elicit_xi <-
-  function(linear_parameters, mean_utility, X, price) {
+  function(linear_parameters, mean_utility, X, p) {
     beta_hat <- linear_parameters[1:(length(linear_parameters) - 1)]
     alpha_hat <- linear_parameters[length(linear_parameters)]
     xi_hat <-
       foreach (t = 1:length(mean_utility)) %do% {
         xi_hat_t <-
-          mean_utility[[t]] - X[[t]] %*% beta_hat - price[[t]] * alpha_hat
+          mean_utility[[t]] - X[[t]] %*% beta_hat - p[[t]] * alpha_hat
         return(xi_hat_t)
       }
     return(xi_hat) 
@@ -182,16 +182,16 @@ elicit_xi <-
 
 # compute moments
 compute_moments <-
-  function(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W) {
+  function(theta_nonlinear, share, mean_utility, X, p, Z, nu, upsilon, W) {
     # extract
     sigma_nu <- theta_nonlinear[1:(length(theta_nonlinear) - 1)]
     sigma_upsilon <- theta_nonlinear[length(theta_nonlinear)]
     # invert share
-    mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+    mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
     # estimate the linear parameters
-    theta_linear_hat <- estimate_linear_parameters(mean_utility, X, price, Z, W)
+    theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, Z, W)
     # elicit xi
-    xi_hat <- elicit_xi(theta_linear_hat, mean_utility, X, price)
+    xi_hat <- elicit_xi(theta_linear_hat, mean_utility, X, p)
     # XZ
     XZ <-
       purrr::map2(X, Z, cbind)
@@ -209,9 +209,13 @@ compute_moments <-
 
 # compute objective function
 compute_objective <-
-  function(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+    # adjust parameters
+    theta_nonlinear_full <- rep(0, length(rl))
+    theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
+    theta_nonlinear_full <- matrix(theta_nonlinear_full)
     # compute moments
-    moments <- compute_moments(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W)
+    moments <- compute_moments(theta_nonlinear_full, share, mean_utility, X, p, Z, nu, upsilon, W)
     # compute objective 
     objective <- crossprod(moments, solve(W, moments)) / 2
     return(objective)
@@ -219,16 +223,17 @@ compute_objective <-
 
 # estiamte parameters
 estimate_parameters <-
-  function(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
     solution <-
       optim(
         par = theta_nonlinear,
         fn = compute_objective,
         method = "Nelder-Mead",
+        rl = rl,
         share = share,
         mean_utility = mean_utility,
         X = X,
-        price = price,
+        p = p,
         Z = Z,
         nu = nu,
         upsilon = upsilon,

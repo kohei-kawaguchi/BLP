@@ -20,7 +20,7 @@ J <- 10
 N <- 1000
 # number of consumers for estimation
 M <- 1000
-# number of product characteristics excluding price
+# number of product characteristics excluding p
 K <- 5
 
 #---------------------#
@@ -28,10 +28,10 @@ K <- 5
 #---------------------#
 # probability that a product is available
 prob_availability <- 0.7
-# partial correlation between price and xi
-cor_xi_price <- 0.6
-# partial correlation between price and marginal cost shocks
-cor_mc_price <- 0.5
+# partial correlation between p and xi
+cor_xi_p <- 0.6
+# partial correlation between p and marginal cost shocks
+cor_mc_p <- 0.5
 
 #-----------------------------#
 # simulate exogenosu variables
@@ -73,7 +73,7 @@ nu <-
     nu_t <- matrix(rnorm(K * N), nrow = K)
     return(nu_t)
   }
-# taste shocks on price
+# taste shocks on p
 upsilon <-
   foreach (t = 1:T) %do% {
     upsilon_t <- matrix(rnorm(N), nrow = 1)
@@ -86,12 +86,12 @@ mc <-
     mc_t <- mc_t[availability[[t]], , drop = FALSE]
     return(mc_t)
   }
-# price
-price <- 
+# p
+p <- 
   foreach (t = 1:T) %do% {
-    price_t <- matrix(exp(rnorm(length(availability[[t]])) + cor_xi_price * xi[[t]] + cor_mc_price * mc[[t]]))
+    p_t <- matrix(exp(rnorm(length(availability[[t]])) + cor_xi_p * xi[[t]] + cor_mc_p * mc[[t]]))
 
-    return(price_t)
+    return(p_t)
   }
 # use mc as instrumental variables
 Z <- mc
@@ -110,41 +110,53 @@ sigma_nu <- exp(rnorm(K))
 # bundle parameters
 theta_linear <- matrix(c(beta, alpha))
 theta_nonlinear <- matrix(c(sigma_nu, sigma_upsilon))
+# random l
+rl <- as.integer(theta_nonlinear > 0)
 
 #-------------------------------#
 # simulate endogenous vavriables
 #-------------------------------#
 # compute mean utility
-mean_utility <- compute_mean_utility(beta, alpha, X, price, xi)
+mean_utility <- compute_mean_utility(beta, alpha, X, p, xi)
+mean_utility_rcpp <- compute_mean_utility_rcpp(beta, alpha, X, p, xi)
+max(abs(unlist(mean_utility) - unlist(mean_utility_rcpp)))
 
 # compute individual utility
 individual_utility <-
-  compute_individual_utility(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
+  compute_individual_utility(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
+individual_utility_rcpp <-
+  compute_individual_utility_rcpp(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
+max(abs(unlist(individual_utility) - unlist(individual_utility_rcpp)))
 
 # compute individual share
 individual_share <-
-  compute_individual_share(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
+  compute_individual_share(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
+individual_share_rcpp <-
+  compute_individual_share_rcpp(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
+max(abs(unlist(individual_share) - unlist(individual_share_rcpp)))
 
 # compute share
-share <- compute_share(beta, alpha, sigma_nu, sigma_upsilon, X, price, xi, nu, upsilon)
+share <- compute_share(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
+share_rcpp <- compute_share_rcpp(beta, alpha, sigma_nu, sigma_upsilon, X, p, xi, nu, upsilon)
+max(abs(unlist(share) - unlist(share_rcpp)))
 
 # compute invidual utility from delta
 individual_utility_delta <- 
-  compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+  compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(individual_utility) - unlist(individual_utility_delta)))
 
 # compute individual share from delta
 individual_share_delta <- 
-  compute_individual_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+  compute_individual_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(individual_share) - unlist(individual_share_delta)))
 
 # compute share
 share_delta <- 
-  compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+  compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(share_delta) - unlist(share)))
 
 # invert share
-mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, price, nu, upsilon)
+mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 
 # make initial weight
 X_vec <- 
@@ -157,20 +169,20 @@ XZ <- cbind(X_vec, Z_vec)
 W <- crossprod(XZ, XZ)
 
 # estimate the linear parameters
-theta_linear_hat <- estimate_linear_parameters(mean_utility, X, price, Z, W)
+theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, Z, W)
 max(abs(theta_linear_hat - theta_linear))
 
 # elicit xi
-xi_hat <- elicit_xi(theta_linear_hat, mean_utility, X, price)
+xi_hat <- elicit_xi(theta_linear_hat, mean_utility, X, p)
 
 # compute moments
-moments <- compute_moments(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W)
+moments <- compute_moments(theta_nonlinear, share, mean_utility, X, p, Z, nu, upsilon, W)
 
 # compute objective function
-objective <- compute_objective(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W)
+objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
 
 # estiamte parameters
-solution <- estimate_parameters(theta_nonlinear, share, mean_utility, X, price, Z, nu, upsilon, W) 
+solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) 
 theta_nonlinear_hat <- solution$par
 max(abs(theta_nonlinear_hat - theta_nonlinear))
 
@@ -178,7 +190,7 @@ max(abs(theta_nonlinear_hat - theta_nonlinear))
 initial_mean_utility <-
   share %>%
   purrr::map(., ~ log(. / (1 - sum(.))))
-solution <- estimate_parameters(theta_nonlinear, share, initial_mean_utility, X, price, Z, nu, upsilon, W) 
+solution <- estimate_parameters(theta_nonlinear, share, initial_mean_utility, X, p, Z, nu, upsilon, W) 
 theta_nonlinear_hat <- solution$par
 max(abs(theta_nonlinear_hat - theta_nonlinear))
 
