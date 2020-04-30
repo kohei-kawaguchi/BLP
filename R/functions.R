@@ -130,7 +130,7 @@ invert_share <-
   function(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
     # distance 
     distance <- 100
-    while (distance > 1e-8) {
+    while (distance > 1e-12) {
       share_delta <- 
         compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
       update <-

@@ -237,7 +237,7 @@ Rcpp::List compute_individual_utility_delta_rcpp(
 //       foreach (t = 1:length(individual_utility)) %do% {
 //         individual_utility_t <- individual_utility[[t]]
 //         individual_share_t <- exp(individual_utility_t) 
-//         denominator_t <- matrix(apply(1 + individual_share_t, 2, sum), nrow = 1)
+//         denominator_t <- 1 + matrix(apply(individual_share_t, 2, sum), nrow = 1)
 //         denominator_t <- matrix(rep(1, nrow(individual_share_t))) %*% denominator_t
 //         individual_share_t <- individual_share_t / denominator_t
 //         return(individual_share_t)
@@ -271,8 +271,87 @@ Rcpp::List compute_individual_share_delta_rcpp(
   return(individual_share);
 }
 
+// # compute share
+// compute_share_delta <-
+//   function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
+// # compute individual share
+//     individual_share <-
+//       compute_individual_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+// # compute share
+//     share <-
+//       individual_share %>%
+//       purrr::map(., ~ apply(., 1, mean)) %>%
+//       purrr::map(., matrix)
+//     return(share)
+//   }
+// [[Rcpp::export]]
+Rcpp::List compute_share_delta_rcpp(
+    Rcpp::List mean_utility, 
+    Eigen::VectorXd sigma_nu, 
+    double sigma_upsilon, 
+    Rcpp::List X, 
+    Rcpp::List p, 
+    Rcpp::List nu, 
+    Rcpp::List upsilon  
+) {
+  // compute individual share
+  Rcpp::List individual_share =
+    compute_individual_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon);
+  // compute share
+  Rcpp::List share;
+  for (int t = 0; t < individual_share.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> individual_share_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (individual_share.at(t)));
+    Eigen::MatrixXd share_t = individual_share_t.rowwise().mean();
+    share.push_back(share_t);
+  }
+  return(share);
+}
 
-
+// # invert share
+// invert_share <-
+//   function(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
+// # distance 
+//     distance <- 100
+//     while (distance > 1e-12) {
+//       share_delta <- 
+//         compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+//       update <-
+//         purrr::map2(share, share_delta, ~ log(.x) - log(.y))
+//       mean_utility <- 
+//         purrr::map2(mean_utility, update, ~ .x + .y)
+//       distance <- max(abs(unlist(update)))
+//     }
+//     return(mean_utility)
+//   }
+// [[Rcpp::export]]
+Rcpp::List invert_share_rcpp(
+    Rcpp::List share,
+    Rcpp::List mean_utility, 
+    Eigen::VectorXd sigma_nu, 
+    double sigma_upsilon, 
+    Rcpp::List X, 
+    Rcpp::List p, 
+    Rcpp::List nu, 
+    Rcpp::List upsilon  
+) {
+  double distance = 100;
+  while (distance > 1e-12) {
+    Rcpp::List share_delta = 
+      compute_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon);
+    distance = 0;
+    Rcpp::List mean_utility_new;
+    for (int t = 0; t < mean_utility.size(); t++) {
+      Eigen::Map<Eigen::MatrixXd> mean_utility_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (mean_utility.at(t)));
+      Eigen::Map<Eigen::MatrixXd> share_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (share.at(t)));
+      Eigen::Map<Eigen::MatrixXd> share_delta_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (share_delta.at(t)));
+      Eigen::MatrixXd update_t = share_t.array().log() - share_delta_t.array().log();
+      distance = std::max(distance, update_t.array().abs().maxCoeff());
+      mean_utility_t = mean_utility_t + update_t;
+      mean_utility.at(t) = mean_utility_t;
+    }
+  }
+  return(mean_utility);
+}
 
 
 

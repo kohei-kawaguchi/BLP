@@ -160,10 +160,15 @@ max(abs(unlist(individual_share_delta) - unlist(individual_share_delta_rcpp)))
 # compute share
 share_delta <- 
   compute_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+share_delta_rcpp <- 
+  compute_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(share_delta) - unlist(share)))
+max(abs(unlist(share_delta) - unlist(share_delta_rcpp)))
 
 # invert share
 mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+mean_utility_rcpp <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+max(abs(unlist(mean_utility) - unlist(mean_utility_rcpp)))
 
 # make initial weight
 X_vec <- 
