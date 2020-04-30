@@ -179,8 +179,52 @@ Rcpp::List compute_share_rcpp(
   return(share);
 }
 
-
-
+// # compute invidual utility from delta
+// compute_individual_utility_delta <-
+//   function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
+//     indirect_utility <-
+//       foreach (t = 1:length(mean_utility)) %do% {
+//         X_t <- X[[t]]
+//         p_t <- p[[t]]
+//         nu_t <- nu[[t]]
+//         upsilon_t <- upsilon[[t]]
+//         mean_indirect_utility_t <- mean_utility[[t]]
+//         shock_indirect_utility_t <- 
+//           X_t %*% diag(sigma_nu) %*% nu_t +
+//           p_t %*% sigma_upsilon %*% upsilon_t
+//         indirect_utility_t <-
+//           mean_indirect_utility_t %*% t(rep(1, ncol(nu_t))) +
+//           shock_indirect_utility_t
+//         return(indirect_utility_t)
+//       }
+//       return(indirect_utility)
+//   }
+// [[Rcpp::export]]
+Rcpp::List compute_individual_utility_delta_rcpp(
+    Rcpp::List mean_utility, 
+    Eigen::VectorXd sigma_nu, 
+    double sigma_upsilon, 
+    Rcpp::List X, 
+    Rcpp::List p, 
+    Rcpp::List nu, 
+    Rcpp::List upsilon
+) {
+  Rcpp::List indirect_utility;
+  for (int t = 0; t < mean_utility.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> X_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (X.at(t)));
+    Eigen::Map<Eigen::MatrixXd> p_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (p.at(t)));
+    Eigen::Map<Eigen::MatrixXd> nu_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (nu.at(t)));
+    Eigen::Map<Eigen::MatrixXd> upsilon_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (upsilon.at(t)));
+    Eigen::Map<Eigen::MatrixXd> mean_indirect_utility_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (mean_utility.at(t)));
+    Eigen::MatrixXd shock_indirect_utility_t =
+      X_t * sigma_nu.asDiagonal() * nu_t +
+      p_t * sigma_upsilon * upsilon_t;
+    Eigen::MatrixXd indirect_utility_t = mean_indirect_utility_t * Eigen::MatrixXd::Ones(1, nu_t.cols()) +
+      shock_indirect_utility_t;
+    indirect_utility.push_back(indirect_utility_t);
+  }
+  return(indirect_utility);
+}
 
 
 

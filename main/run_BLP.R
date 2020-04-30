@@ -8,6 +8,7 @@ library(foreach)
 library(magrittr)
 library(codetools)
 library(doParallel)
+library(HighBLP)
 
 #--------------#
 # set constants
@@ -143,7 +144,10 @@ max(abs(unlist(share) - unlist(share_rcpp)))
 # compute invidual utility from delta
 individual_utility_delta <- 
   compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+individual_utility_delta_rcpp <- 
+  compute_individual_utility_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(individual_utility) - unlist(individual_utility_delta)))
+max(abs(unlist(individual_utility_delta) - unlist(individual_utility_delta_rcpp)))
 
 # compute individual share from delta
 individual_share_delta <- 
