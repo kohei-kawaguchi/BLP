@@ -152,7 +152,10 @@ max(abs(unlist(individual_utility_delta) - unlist(individual_utility_delta_rcpp)
 # compute individual share from delta
 individual_share_delta <- 
   compute_individual_share_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+individual_share_delta_rcpp <- 
+  compute_individual_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(individual_share) - unlist(individual_share_delta)))
+max(abs(unlist(individual_share_delta) - unlist(individual_share_delta_rcpp)))
 
 # compute share
 share_delta <- 

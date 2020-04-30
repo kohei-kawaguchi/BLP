@@ -226,8 +226,50 @@ Rcpp::List compute_individual_utility_delta_rcpp(
   return(indirect_utility);
 }
 
-
-
+// # compute individual share from delta
+// compute_individual_share_delta <-
+//   function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
+// # compute individual utility
+//     individual_utility <-
+//       compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+// # compute individual shareindividual_utility
+//     individual_share <-
+//       foreach (t = 1:length(individual_utility)) %do% {
+//         individual_utility_t <- individual_utility[[t]]
+//         individual_share_t <- exp(individual_utility_t) 
+//         denominator_t <- matrix(apply(1 + individual_share_t, 2, sum), nrow = 1)
+//         denominator_t <- matrix(rep(1, nrow(individual_share_t))) %*% denominator_t
+//         individual_share_t <- individual_share_t / denominator_t
+//         return(individual_share_t)
+//       }
+//       return(individual_share)
+//   }
+// [[Rcpp::export]]
+Rcpp::List compute_individual_share_delta_rcpp(
+    Rcpp::List mean_utility, 
+    Eigen::VectorXd sigma_nu, 
+    double sigma_upsilon, 
+    Rcpp::List X, 
+    Rcpp::List p, 
+    Rcpp::List nu, 
+    Rcpp::List upsilon  
+) {
+  // compute individual utility
+  Rcpp::List individual_utility = 
+    compute_individual_utility_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon);
+  // compute individual share
+  Rcpp::List individual_share;
+  for (int t = 0; t < X.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> individual_utility_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (individual_utility.at(t)));
+    Eigen::MatrixXd individual_share_t = individual_utility_t.array().exp();
+    Eigen::MatrixXd denominator_t = individual_share_t.colwise().sum();
+    denominator_t = Eigen::MatrixXd::Ones(1, denominator_t.cols()) + denominator_t;
+    denominator_t = Eigen::MatrixXd::Ones(individual_share_t.rows(), 1) * denominator_t;
+    individual_share_t = (individual_share_t.array() / denominator_t.array()).matrix();
+    individual_share.push_back(individual_share_t);
+  }
+  return(individual_share);
+}
 
 
 

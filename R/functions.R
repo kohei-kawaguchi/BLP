@@ -98,12 +98,12 @@ compute_individual_share_delta <-
     # compute individual utility
     individual_utility <-
       compute_individual_utility_delta(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
-    # compute individual shareindividual_utility
+    # compute individual share
     individual_share <-
       foreach (t = 1:length(individual_utility)) %do% {
         individual_utility_t <- individual_utility[[t]]
         individual_share_t <- exp(individual_utility_t) 
-        denominator_t <- matrix(apply(1 + individual_share_t, 2, sum), nrow = 1)
+        denominator_t <- 1 + matrix(apply(individual_share_t, 2, sum), nrow = 1)
         denominator_t <- matrix(rep(1, nrow(individual_share_t))) %*% denominator_t
         individual_share_t <- individual_share_t / denominator_t
         return(individual_share_t)
