@@ -159,10 +159,9 @@ estimate_linear_parameters <-
       purrr::reduce(rbind)
     XP <- cbind(X_vec, p_vec)
     XZ <- cbind(X_vec, Z_vec)
-    W <- crossprod(XZ, XZ)
-    A <- crossprod(XP, XZ) %*% solve(W, crossprod(XZ, XP))
-    b <- crossprod(XP, XZ) %*% solve(W, crossprod(XZ, mean_utility_vec))
-    theta_linear_hat <- solve(A, b)
+    A <- crossprod(XP, XZ) %*% qr.solve(W, crossprod(XZ, XP))
+    b <- crossprod(XP, XZ) %*% qr.solve(W, crossprod(XZ, mean_utility_vec))
+    theta_linear_hat <- qr.solve(A, b)
     return(theta_linear_hat)
   }
 
@@ -187,11 +186,11 @@ compute_moments <-
     sigma_nu <- theta_nonlinear[1:(length(theta_nonlinear) - 1)]
     sigma_upsilon <- theta_nonlinear[length(theta_nonlinear)]
     # invert share
-    mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+    mean_utility <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
     # estimate the linear parameters
-    theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, Z, W)
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
     # elicit xi
-    xi_hat <- elicit_xi(theta_linear_hat, mean_utility, X, p)
+    xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
     # XZ
     XZ <-
       purrr::map2(X, Z, cbind)
@@ -241,3 +240,125 @@ estimate_parameters <-
       )
     return(solution)  
   }
+
+# compute derivatives of share with respect to delta
+compute_share_derivatives_wrt_mean_utility <-
+  function(individual_share) {
+    share_derivatives_wrt_mean_utility <-
+      foreach (t = 1:length(individual_share)) %do% {
+        s_t <- individual_share[[t]]
+        share_derivatives_wrt_mean_utility_t <-
+          foreach (i = 1:ncol(s_t)) %do% {
+            s_ti <- s_t[, i, drop = FALSE]
+            ss_ti <- diag(as.numeric(s_ti)) - tcrossprod(s_ti, s_ti)
+            return(ss_ti)
+          }
+        share_derivatives_wrt_mean_utility_t <-
+          share_derivatives_wrt_mean_utility_t %>%
+          purrr::reduce(., `+`)
+        share_derivatives_wrt_mean_utility_t <- 
+          share_derivatives_wrt_mean_utility_t / ncol(s_t)
+        return(share_derivatives_wrt_mean_utility_t)
+      }
+    return(share_derivatives_wrt_mean_utility)
+  }
+
+# compute derivatives of share with respect to delta by numDeriv
+compute_share_derivatives_wrt_mean_utility_numDeriv <-
+  function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
+    
+    share_derivatives_wrt_mean_utility <-
+      foreach (t = 1:length(mean_utility)) %do% {
+        
+        mean_utility_t <- mean_utility[[t]]
+        
+        fn <- 
+          function(mean_utility_t) {
+            # compute individual share
+            individual_share <-
+              compute_individual_share_delta(list(mean_utility_t), sigma_nu, sigma_upsilon, X[t], p[t], nu[t], upsilon[t])
+            # compute share
+            share <-
+              individual_share %>%
+              purrr::map(., ~ apply(., 1, mean)) %>%
+              purrr::map(., matrix)
+            share <- share[[1]]
+            return(share)
+          }
+        
+        share_derivatives_wrt_mean_utility_t <-
+          numDeriv::jacobian(func = fn, x = mean_utility_t)
+        
+        return(share_derivatives_wrt_mean_utility_t)
+      }
+    return(share_derivatives_wrt_mean_utility)
+  }
+
+
+# compute derivatives of share with respect to non-linear parameters
+compute_share_derivatives_wrt_theta_nonlinear <-
+  function(individual_share, X, p, nu, upsilon) {
+    share_derivatives_wrt_theta_nonlinear <-
+      foreach (t = 1:length(individual_share)) %do% {
+        s_t <- individual_share[[t]]
+        X_t <- X[[t]]
+        p_t <- p[[t]]
+        nu_t <- nu[[t]]
+        upsilon_t <- upsilon[[t]]
+        Xp_t <- cbind(X_t, p_t)
+        taste_t <- rbind(nu_t, upsilon_t)
+        share_derivatives_wrt_theta_nonlinear_t <-
+          foreach (i = 1:ncol(s_t)) %do% {
+            s_ti <- s_t[, i, drop = FALSE]
+            taste_ti <- taste_t[, i, drop = FALSE]
+            xs <- crossprod(s_ti, Xp_t)
+            xs <- Xp_t - matrix(rep(1, nrow(Xp_t))) %*% xs
+            xs <- matrix(rep(1, nrow(Xp_t))) %*% t(taste_ti) * xs
+            xs <- s_ti %*% matrix(rep(1, ncol(Xp_t)), nrow = 1) * xs
+            return(xs)
+          }
+        share_derivatives_wrt_theta_nonlinear_t <-
+          share_derivatives_wrt_theta_nonlinear_t %>%
+          purrr::reduce(., `+`)
+        share_derivatives_wrt_theta_nonlinear_t <-
+          share_derivatives_wrt_theta_nonlinear_t / ncol(s_t)
+        return(share_derivatives_wrt_theta_nonlinear_t)
+      }
+    return(share_derivatives_wrt_theta_nonlinear)
+  }
+
+
+
+# compute derivatives of share with respect to non-linear parameters by numDeriv
+compute_share_derivatives_wrt_theta_nonlinear_numDeriv <-
+  function(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon) {
+    
+    theta_nonlinear <- c(sigma_nu, sigma_upsilon)
+    
+    share_derivatives_wrt_mean_utility <-
+      foreach (t = 1:length(mean_utility)) %do% {
+        
+        fn <- 
+          function(theta_nonlinear) {
+            sigma_nu <- theta_nonlinear[1:(length(theta_nonlinear) - 1)]
+            sigma_upsilon <- theta_nonlinear[length(theta_nonlinear)]
+            # compute individual share
+            individual_share <-
+              compute_individual_share_delta(mean_utility[t], sigma_nu, sigma_upsilon, X[t], p[t], nu[t], upsilon[t])
+            # compute share
+            share <-
+              individual_share %>%
+              purrr::map(., ~ apply(., 1, mean)) %>%
+              purrr::map(., matrix)
+            share <- share[[1]]
+            return(share)
+          }
+        
+        share_derivatives_wrt_mean_utility_t <-
+          numDeriv::jacobian(func = fn, x = theta_nonlinear)
+        
+        return(share_derivatives_wrt_mean_utility_t)
+      }
+    return(share_derivatives_wrt_mean_utility)
+  }
+

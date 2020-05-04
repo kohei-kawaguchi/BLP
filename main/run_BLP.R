@@ -174,18 +174,26 @@ max(abs(unlist(mean_utility) - unlist(mean_utility_rcpp)))
 X_vec <- 
   X %>%
   purrr::reduce(rbind)
+X_vec_rcpp <- vstack_rcpp(X)
+max(abs(X_vec - X_vec_rcpp))
 Z_vec <-
   Z %>%
   purrr::reduce(rbind)
 XZ <- cbind(X_vec, Z_vec)
 W <- crossprod(XZ, XZ)
+W <- diag(ncol(XZ))
 
 # estimate the linear parameters
 theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, Z, W)
+theta_linear_hat_rcpp <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+cbind(theta_linear_hat, theta_linear, theta_linear_hat - theta_linear)
 max(abs(theta_linear_hat - theta_linear))
+max(abs(theta_linear_hat - theta_linear_hat_rcpp))
 
 # elicit xi
 xi_hat <- elicit_xi(theta_linear_hat, mean_utility, X, p)
+xi_hat_rcpp <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
+max(abs(unlist(xi_hat) - unlist(xi_hat_rcpp)))
 
 # compute moments
 moments <- compute_moments(theta_nonlinear, share, mean_utility, X, p, Z, nu, upsilon, W)
@@ -205,6 +213,46 @@ initial_mean_utility <-
 solution <- estimate_parameters(theta_nonlinear, share, initial_mean_utility, X, p, Z, nu, upsilon, W) 
 theta_nonlinear_hat <- solution$par
 max(abs(theta_nonlinear_hat - theta_nonlinear))
+
+# compute derivatives of share with respect to delta
+share_derivatives_wrt_mean_utility <- compute_share_derivatives_wrt_mean_utility(individual_share)
+share_derivatives_wrt_mean_utility_numDeriv <- compute_share_derivatives_wrt_mean_utility_numDeriv(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+max(abs(unlist(share_derivatives_wrt_mean_utility) - unlist(share_derivatives_wrt_mean_utility_numDeriv)))
+
+# compute derivatives of share with respect to non-linear parameters
+share_derivatives_wrt_theta_nonlinear <- compute_share_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
+share_derivatives_wrt_theta_nonlinear_numDeriv <- compute_share_derivatives_wrt_theta_nonlinear_numDeriv(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+max(abs(unlist(share_derivatives_wrt_theta_nonlinear) - unlist(share_derivatives_wrt_theta_nonlinear_numDeriv)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

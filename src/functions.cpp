@@ -354,8 +354,103 @@ Rcpp::List invert_share_rcpp(
 }
 
 
+// [[Rcpp::export]]
+Eigen::MatrixXd vstack_rcpp(
+    Rcpp::List L
+) {
+  int row_size = 0;
+  int col_size = 0;
+  for (int t = 0; t < L.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> L_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (L.at(t)));
+    row_size = row_size + L_t.rows();
+    col_size = L_t.cols();
+  }
+  Eigen::MatrixXd L_vec = Eigen::MatrixXd::Zero(row_size, col_size);
+  row_size = 0;
+  for (int t = 0; t < L.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> L_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (L.at(t)));
+    L_vec.block(row_size, 0, L_t.rows(), L_t.cols()) = L_t;
+    row_size = row_size + L_t.rows();
+  }
+  return(L_vec);
+}
 
+// # estimate the linear parameters
+// estimate_linear_parameters <-
+//   function(mean_utility, X, p, Z, W) {
+//     mean_utility_vec <- 
+//       mean_utility %>%
+//       purrr::reduce(rbind)
+//     X_vec <- 
+//       X %>%
+//       purrr::reduce(rbind)
+//     p_vec <-
+//       p %>%
+//       purrr::reduce(rbind)
+//     Z_vec <-
+//       Z %>%
+//       purrr::reduce(rbind)
+//     XP <- cbind(X_vec, p_vec)
+//     XZ <- cbind(X_vec, Z_vec)
+//     A <- crossprod(XP, XZ) %*% solve(W, crossprod(XZ, XP))
+//     b <- crossprod(XP, XZ) %*% solve(W, crossprod(XZ, mean_utility_vec))
+//     theta_linear_hat <- solve(A, b)
+//     return(theta_linear_hat)
+//   }
+// [[Rcpp::export]]
+Eigen::MatrixXd estimate_linear_parameters_rcpp(
+    Rcpp::List mean_utility, 
+    Rcpp::List X, 
+    Rcpp::List p, 
+    Rcpp::List Z,
+    Eigen::MatrixXd W
+) { 
+  Eigen::MatrixXd mean_utility_vec = vstack_rcpp(mean_utility);
+  Eigen::MatrixXd X_vec = vstack_rcpp(X);
+  Eigen::MatrixXd p_vec = vstack_rcpp(p);
+  Eigen::MatrixXd Z_vec = vstack_rcpp(Z);
+  Eigen::MatrixXd XP(X_vec.rows(), X_vec.cols() + p_vec.cols());
+  XP << X_vec, p_vec;
+  Eigen::MatrixXd XZ(X_vec.rows(), X_vec.cols() + Z_vec.cols());
+  XZ << X_vec, Z_vec;
+  Eigen::MatrixXd A = (XP.transpose() * XZ) * (W.colPivHouseholderQr().solve(XZ.transpose() * XP));
+  Eigen::MatrixXd b = (XP.transpose() * XZ) * W.colPivHouseholderQr().solve(XZ.transpose() * mean_utility_vec);
+  Eigen::MatrixXd theta_linear_hat = A.colPivHouseholderQr().solve(b);
+  return(theta_linear_hat);
+}
 
+// # elicit xi
+// elicit_xi <-
+//   function(linear_parameters, mean_utility, X, p) {
+//     beta_hat <- linear_parameters[1:(length(linear_parameters) - 1)]
+//     alpha_hat <- linear_parameters[length(linear_parameters)]
+//     xi_hat <-
+//       foreach (t = 1:length(mean_utility)) %do% {
+//         xi_hat_t <-
+//           mean_utility[[t]] - X[[t]] %*% beta_hat - p[[t]] * alpha_hat
+//         return(xi_hat_t)
+//       }
+//       return(xi_hat) 
+//   }
+// [[Rcpp::export]]
+Rcpp::List elicit_xi_rcpp(
+    Eigen::MatrixXd linear_parameters, 
+    Rcpp::List mean_utility, 
+    Rcpp::List X, 
+    Rcpp::List p
+) {
+  Eigen::MatrixXd beta_hat = linear_parameters.block(0, 0, linear_parameters.rows() - 1, 1);
+  double alpha_hat = linear_parameters(linear_parameters.rows() - 1, 0);
+  Rcpp::List xi_hat;
+  for (int t = 0; t < mean_utility.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> mean_utility_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (mean_utility.at(t)));
+    Eigen::Map<Eigen::MatrixXd> X_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (X.at(t)));
+    Eigen::Map<Eigen::MatrixXd> p_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (p.at(t)));
+    Eigen::MatrixXd xi_hat_t = mean_utility_t - X_t * beta_hat - p_t * alpha_hat;
+    xi_hat.push_back(xi_hat_t);
+  }
+  return(xi_hat);
+}
 
 
 
