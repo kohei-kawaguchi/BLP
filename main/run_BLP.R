@@ -235,10 +235,18 @@ objective_derivatives_wrt_theta_nonlinear_numDeriv <-
 max(abs(unlist(objective_derivatives_wrt_theta_nonlinear) - unlist(objective_derivatives_wrt_theta_nonlinear_numDeriv)))
 
 
+# estiamte parameters
+solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) 
+theta_nonlinear_hat <- solution$par
+max(abs(theta_nonlinear_hat - theta_nonlinear))
 
+# compute efficient weighting matrix
+W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
 
+# compute standard errors
+covariance_theta_nonlinear <- compute_covariance_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
 
-
+se_theta_nonlinear <- sqrt(diag(covariance_theta_nonlinear))
 
 
 

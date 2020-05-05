@@ -442,3 +442,91 @@ compute_objective_derivatives_wrt_theta_nonlinear_numDeriv <-
     return(objective_derivatives)
   }
 
+# compute efficient weighting matrix
+compute_efficient_weighting_matrix <-
+  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+    # adjust parameters
+    theta_nonlinear_full <- rep(0, length(rl))
+    theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
+    theta_nonlinear_full <- matrix(theta_nonlinear_full)
+    # compute moments
+    # extract
+    sigma_nu <- theta_nonlinear_full[1:(length(theta_nonlinear_full) - 1)]
+    sigma_upsilon <- theta_nonlinear_full[length(theta_nonlinear_full)]
+    # invert share
+    mean_utility <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+    # compute individual share from delta
+    individual_share_delta <- 
+      compute_individual_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+    # compute derivatives of mean utility with respect to non-linear parameters
+    mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
+    # estimate the linear parameters
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+    # elicit xi
+    xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
+    
+    # XZ
+    XZ <-
+      purrr::map2(X, Z, cbind) %>%
+      purrr::reduce(., rbind)
+    # compute variance of moments
+    moments <-
+      xi_hat %>%
+      purrr::reduce(rbind)
+    moments <- moments %*% matrix(rep(1, ncol(XZ)), nrow = 1)
+    moments <- moments *XZ
+    Omega <- crossprod(moments, moments) / nrow(XZ)
+    
+    # return
+    return(Omega)
+  }
+
+# compute standard errors
+compute_covariance_theta_nonlinear <-
+  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+    # adjust parameters
+    theta_nonlinear_full <- rep(0, length(rl))
+    theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
+    theta_nonlinear_full <- matrix(theta_nonlinear_full)
+    # compute moments
+    # extract
+    sigma_nu <- theta_nonlinear_full[1:(length(theta_nonlinear_full) - 1)]
+    sigma_upsilon <- theta_nonlinear_full[length(theta_nonlinear_full)]
+    # invert share
+    mean_utility <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+    # compute individual share from delta
+    individual_share_delta <- 
+      compute_individual_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+    # compute derivatives of mean utility with respect to non-linear parameters
+    mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
+    # estimate the linear parameters
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+    # elicit xi
+    xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
+    
+    # XZ
+    XZ <-
+      purrr::map2(X, Z, cbind) %>%
+      purrr::reduce(., rbind)
+    # compute variance of moments
+    moments <-
+      xi_hat %>%
+      purrr::reduce(rbind)
+    moments <- moments %*% matrix(rep(1, ncol(XZ)), nrow = 1)
+    moments <- moments *XZ
+    Omega <- crossprod(moments, moments) / nrow(XZ)
+    
+    # compute derivatives of moments
+    G <-
+      purrr::reduce(mean_utility_derivatives_wrt_theta_nonlinear, rbind)
+    G <- crossprod(XZ, G) / nrow(XZ)
+    
+    # compute asymptotic covariance of the estimator
+    L <- crossprod(G, qr.solve(W, G))
+    C <- crossprod(G, qr.solve(W, Omega)) %*% qr.solve(W, G)
+    covariance <- qr.solve(L, C) %*% qr.solve(L)
+    covariance <- covariance / nrow(XZ)
+    
+    # return
+    return(covariance)
+  }
