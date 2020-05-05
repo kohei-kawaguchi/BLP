@@ -411,8 +411,10 @@ Eigen::MatrixXd estimate_linear_parameters_rcpp(
   Eigen::MatrixXd Z_vec = vstack_rcpp(Z);
   Eigen::MatrixXd XP(X_vec.rows(), X_vec.cols() + p_vec.cols());
   XP << X_vec, p_vec;
-  Eigen::MatrixXd XZ(X_vec.rows(), X_vec.cols() + Z_vec.cols());
-  XZ << X_vec, Z_vec;
+  Eigen::MatrixXd XZ(X_vec.rows(), 3*(X_vec.cols() + Z_vec.cols()) - 2);
+  XZ << X_vec, Z_vec, 
+        X_vec.block(0, 1, X_vec.rows(), X_vec.cols() - 1).array().pow(2), Z_vec.array().pow(2),
+        X_vec.block(0, 1, X_vec.rows(), X_vec.cols() - 1).array().pow(3), Z_vec.array().pow(3);
   Eigen::MatrixXd A = (XP.transpose() * XZ) * (W.colPivHouseholderQr().solve(XZ.transpose() * XP));
   Eigen::MatrixXd b = (XP.transpose() * XZ) * W.colPivHouseholderQr().solve(XZ.transpose() * mean_utility_vec);
   Eigen::MatrixXd theta_linear_hat = A.colPivHouseholderQr().solve(b);

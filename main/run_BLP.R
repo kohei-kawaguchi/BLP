@@ -180,6 +180,7 @@ Z_vec <-
   Z %>%
   purrr::reduce(rbind)
 XZ <- cbind(X_vec, Z_vec)
+XZ <- cbind(XZ, XZ[, 2:ncol(XZ)]^2, XZ[, 2:ncol(XZ)]^3)
 W <- crossprod(XZ, XZ)
 W <- diag(ncol(XZ))
 
@@ -200,19 +201,6 @@ moments <- compute_moments(theta_nonlinear, share, mean_utility, X, p, Z, nu, up
 
 # compute objective function
 objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
-
-# estiamte parameters
-solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) 
-theta_nonlinear_hat <- solution$par
-max(abs(theta_nonlinear_hat - theta_nonlinear))
-
-# initial mean_utility
-initial_mean_utility <-
-  share %>%
-  purrr::map(., ~ log(. / (1 - sum(.))))
-solution <- estimate_parameters(theta_nonlinear, share, initial_mean_utility, X, p, Z, nu, upsilon, W) 
-theta_nonlinear_hat <- solution$par
-max(abs(theta_nonlinear_hat - theta_nonlinear))
 
 # compute derivatives of share with respect to delta
 share_derivatives_wrt_mean_utility <- compute_share_derivatives_wrt_mean_utility(individual_share)
@@ -249,10 +237,10 @@ max(abs(theta_nonlinear_hat - theta_nonlinear))
 W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
 
 # compute standard errors
-covariance_theta_nonlinear <- compute_covariance_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
 
-se_theta_nonlinear <- sqrt(diag(covariance_theta_nonlinear))
-
+se_theta <- sqrt(diag(covariance_theta))
+theta <- c(beta, alpha, theta_nonlinear)
 
 
 
