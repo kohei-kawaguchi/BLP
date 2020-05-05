@@ -452,6 +452,167 @@ Rcpp::List elicit_xi_rcpp(
   return(xi_hat);
 }
 
+// # compute derivatives of share with respect to delta
+// compute_share_derivatives_wrt_mean_utility <-
+//   function(individual_share) {
+//     share_derivatives_wrt_mean_utility <-
+//       foreach (t = 1:length(individual_share)) %do% {
+//         s_t <- individual_share[[t]]
+//         share_derivatives_wrt_mean_utility_t <-
+//           foreach (i = 1:ncol(s_t)) %do% {
+//             s_ti <- s_t[, i, drop = FALSE]
+//             ss_ti <- diag(as.numeric(s_ti)) - tcrossprod(s_ti, s_ti)
+//             return(ss_ti)
+//           }
+//           share_derivatives_wrt_mean_utility_t <-
+//             share_derivatives_wrt_mean_utility_t %>%
+//             purrr::reduce(., `+`)
+//             share_derivatives_wrt_mean_utility_t <- 
+//               share_derivatives_wrt_mean_utility_t / ncol(s_t)
+//             return(share_derivatives_wrt_mean_utility_t)
+//       }
+//       return(share_derivatives_wrt_mean_utility)
+//   }
+// [[Rcpp::export]]
+Rcpp::List compute_share_derivatives_wrt_mean_utility_rcpp(
+  Rcpp::List individual_share
+) {
+  Rcpp::List share_derivatives_wrt_mean_utility;
+  for (int t = 0; t < individual_share.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> s_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (individual_share.at(t)));
+    Eigen::MatrixXd share_derivatives_wrt_mean_utility_t = Eigen::MatrixXd::Zero(s_t.rows(), s_t.rows());
+    for (int i = 0; i < s_t.cols(); i++) {
+      Eigen::VectorXd s_ti = s_t.col(i);
+      Eigen::MatrixXd ss_ti = Eigen::MatrixXd(s_ti.asDiagonal()) - s_ti * s_ti.transpose();
+      share_derivatives_wrt_mean_utility_t = share_derivatives_wrt_mean_utility_t + ss_ti;
+    }
+    share_derivatives_wrt_mean_utility_t = share_derivatives_wrt_mean_utility_t / s_t.cols();
+    share_derivatives_wrt_mean_utility.push_back(share_derivatives_wrt_mean_utility_t);
+  }
+  return(share_derivatives_wrt_mean_utility);
+}
+
+// # compute derivatives of share with respect to non-linear parameters
+// compute_share_derivatives_wrt_theta_nonlinear <-
+//   function(individual_share, X, p, nu, upsilon) {
+//     share_derivatives_wrt_theta_nonlinear <-
+//       foreach (t = 1:length(individual_share)) %do% {
+//         s_t <- individual_share[[t]]
+//         X_t <- X[[t]]
+//         p_t <- p[[t]]
+//         nu_t <- nu[[t]]
+//         upsilon_t <- upsilon[[t]]
+//         Xp_t <- cbind(X_t, p_t)
+//         taste_t <- rbind(nu_t, upsilon_t)
+//         share_derivatives_wrt_theta_nonlinear_t <-
+//           foreach (i = 1:ncol(s_t)) %do% {
+//             s_ti <- s_t[, i, drop = FALSE]
+//             taste_ti <- taste_t[, i, drop = FALSE]
+//             xs <- crossprod(s_ti, Xp_t)
+//             xs <- Xp_t - matrix(rep(1, nrow(Xp_t))) %*% xs
+//             xs <- matrix(rep(1, nrow(Xp_t))) %*% t(taste_ti) * xs
+//             xs <- s_ti %*% matrix(rep(1, ncol(Xp_t)), nrow = 1) * xs
+//             return(xs)
+//           }
+//           share_derivatives_wrt_theta_nonlinear_t <-
+//             share_derivatives_wrt_theta_nonlinear_t %>%
+//             purrr::reduce(., `+`)
+//             share_derivatives_wrt_theta_nonlinear_t <-
+//               share_derivatives_wrt_theta_nonlinear_t / ncol(s_t)
+//             return(share_derivatives_wrt_theta_nonlinear_t)
+//       }
+//       return(share_derivatives_wrt_theta_nonlinear)
+//   }
+// [[Rcpp::export]]
+Rcpp::List compute_share_derivatives_wrt_theta_nonlinear_rcpp(
+  Rcpp::List individual_share,
+  Rcpp::List X,
+  Rcpp::List p,
+  Rcpp::List nu,
+  Rcpp::List upsilon
+) {
+  Rcpp::List share_derivatives_wrt_theta_nonlinear;
+  for (int t = 0; t < individual_share.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> s_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (individual_share.at(t)));
+    Eigen::Map<Eigen::MatrixXd> X_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (X.at(t)));
+    Eigen::Map<Eigen::MatrixXd> p_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (p.at(t)));
+    Eigen::Map<Eigen::MatrixXd> nu_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (nu.at(t)));
+    Eigen::Map<Eigen::MatrixXd> upsilon_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (upsilon.at(t)));
+    Eigen::MatrixXd Xp_t(X_t.rows(), X_t.cols() + p_t.cols());
+    Xp_t << X_t, p_t;
+    Eigen::MatrixXd taste_t(nu_t.rows() + upsilon_t.rows(), nu_t.cols());
+    taste_t << nu_t, upsilon_t;
+    Eigen::MatrixXd share_derivatives_wrt_theta_nonlinear_t = Eigen::MatrixXd::Zero(Xp_t.rows(), Xp_t.cols());
+    for (int i = 0; i < s_t.cols(); i++) {
+      Eigen::MatrixXd s_ti = s_t.col(i);
+      Eigen::MatrixXd taste_ti = taste_t.col(i);
+      Eigen::MatrixXd xs = s_ti.transpose() * Xp_t;
+      xs = Xp_t - Eigen::VectorXd::Ones(Xp_t.rows()) * xs;
+      xs = ((Eigen::VectorXd::Ones(Xp_t.rows()) * taste_ti.transpose()).array() * xs.array()).matrix();
+      xs = ((s_ti * Eigen::MatrixXd::Ones(1, Xp_t.cols())).array() * xs.array()).matrix();
+      share_derivatives_wrt_theta_nonlinear_t = share_derivatives_wrt_theta_nonlinear_t + xs;
+    }
+    share_derivatives_wrt_theta_nonlinear_t = share_derivatives_wrt_theta_nonlinear_t / s_t.cols();
+    share_derivatives_wrt_theta_nonlinear.push_back(share_derivatives_wrt_theta_nonlinear_t);
+  }
+  return(share_derivatives_wrt_theta_nonlinear);
+}
+
+// # compute derivatives of mean utility with respect to non-inear parameters
+// compute_mean_utility_derivatives_wrt_theta_nonlinear <-
+//   function(individual_share, X, p, nu, upsilon) {
+// # compute derivatives of share with respect to delta
+//     share_derivatives_wrt_mean_utility <- compute_share_derivatives_wrt_mean_utility(individual_share)
+// # compute derivatives of share with respect to non-linear parameters
+//     share_derivatives_wrt_theta_nonlinear <- compute_share_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
+// # derivatives
+//     mean_utility_derivatives_wrt_theta_nonlinear <-
+//       purrr::map2(share_derivatives_wrt_mean_utility, share_derivatives_wrt_theta_nonlinear, ~ - qr.solve(.x, .y))
+//     return(mean_utility_derivatives_wrt_theta_nonlinear)
+//   }
+// [[Rcpp::export]]
+Rcpp::List compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(
+  Rcpp::List individual_share,
+  Rcpp::List X,
+  Rcpp::List p,
+  Rcpp::List nu,
+  Rcpp::List upsilon
+) {
+  // compute derivatives of share with respect to delta
+  Rcpp::List share_derivatives_wrt_mean_utility = compute_share_derivatives_wrt_mean_utility_rcpp(individual_share);
+  // compute derivatives of share with respect to non-linear parameters
+  Rcpp::List share_derivatives_wrt_theta_nonlinear = compute_share_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon);
+  // derivatives
+  Rcpp::List mean_utility_derivatives_wrt_theta_nonlinear;
+  for (int t = 0; t < share_derivatives_wrt_mean_utility.size(); t++) {
+    Eigen::Map<Eigen::MatrixXd> share_derivatives_wrt_mean_utility_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (share_derivatives_wrt_mean_utility.at(t)));
+    Eigen::Map<Eigen::MatrixXd> share_derivatives_wrt_theta_nonlinear_t(Rcpp::as<Eigen::Map<Eigen::MatrixXd> > (share_derivatives_wrt_theta_nonlinear.at(t)));
+    Eigen::MatrixXd mean_utility_derivatives_wrt_theta_nonlinear_t = - share_derivatives_wrt_mean_utility_t.colPivHouseholderQr().solve(share_derivatives_wrt_theta_nonlinear_t);
+    mean_utility_derivatives_wrt_theta_nonlinear.push_back(mean_utility_derivatives_wrt_theta_nonlinear_t);
+  }
+  return(mean_utility_derivatives_wrt_theta_nonlinear);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

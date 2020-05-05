@@ -217,15 +217,21 @@ max(abs(theta_nonlinear_hat - theta_nonlinear))
 # compute derivatives of share with respect to delta
 share_derivatives_wrt_mean_utility <- compute_share_derivatives_wrt_mean_utility(individual_share)
 share_derivatives_wrt_mean_utility_numDeriv <- compute_share_derivatives_wrt_mean_utility_numDeriv(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+share_derivatives_wrt_mean_utility_rcpp <- compute_share_derivatives_wrt_mean_utility_rcpp(individual_share)
 max(abs(unlist(share_derivatives_wrt_mean_utility) - unlist(share_derivatives_wrt_mean_utility_numDeriv)))
+max(abs(unlist(share_derivatives_wrt_mean_utility) - unlist(share_derivatives_wrt_mean_utility_rcpp)))
 
 # compute derivatives of share with respect to non-linear parameters
 share_derivatives_wrt_theta_nonlinear <- compute_share_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
 share_derivatives_wrt_theta_nonlinear_numDeriv <- compute_share_derivatives_wrt_theta_nonlinear_numDeriv(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+share_derivatives_wrt_theta_nonlinear_rcpp <- compute_share_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon)
 max(abs(unlist(share_derivatives_wrt_theta_nonlinear) - unlist(share_derivatives_wrt_theta_nonlinear_numDeriv)))
+max(abs(unlist(share_derivatives_wrt_theta_nonlinear) - unlist(share_derivatives_wrt_theta_nonlinear_rcpp)))
 
 # compute derivatives of mean utility with respect to non-linear parameters
 mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
+mean_utility_derivatives_wrt_theta_nonlinear_rcpp <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon)
+max(abs(unlist(mean_utility_derivatives_wrt_theta_nonlinear) - unlist(mean_utility_derivatives_wrt_theta_nonlinear_rcpp)))
 
 # compute derivatives of the objective function with respect to non-linear parameters
 objective_derivatives_wrt_theta_nonlinear <-
@@ -233,7 +239,6 @@ objective_derivatives_wrt_theta_nonlinear <-
 objective_derivatives_wrt_theta_nonlinear_numDeriv <-
   compute_objective_derivatives_wrt_theta_nonlinear_numDeriv(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
 max(abs(unlist(objective_derivatives_wrt_theta_nonlinear) - unlist(objective_derivatives_wrt_theta_nonlinear_numDeriv)))
-
 
 # estiamte parameters
 solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) 
