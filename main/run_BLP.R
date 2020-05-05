@@ -224,17 +224,15 @@ share_derivatives_wrt_theta_nonlinear <- compute_share_derivatives_wrt_theta_non
 share_derivatives_wrt_theta_nonlinear_numDeriv <- compute_share_derivatives_wrt_theta_nonlinear_numDeriv(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(share_derivatives_wrt_theta_nonlinear) - unlist(share_derivatives_wrt_theta_nonlinear_numDeriv)))
 
+# compute derivatives of mean utility with respect to non-linear parameters
+mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
 
-
-
-
-
-
-
-
-
-
-
+# compute derivatives of the objective function with respect to non-linear parameters
+objective_derivatives_wrt_theta_nonlinear <-
+  compute_objective_derivatives_wrt_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+objective_derivatives_wrt_theta_nonlinear_numDeriv <-
+  compute_objective_derivatives_wrt_theta_nonlinear_numDeriv(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+max(abs(unlist(objective_derivatives_wrt_theta_nonlinear) - unlist(objective_derivatives_wrt_theta_nonlinear_numDeriv)))
 
 
 

@@ -362,3 +362,83 @@ compute_share_derivatives_wrt_theta_nonlinear_numDeriv <-
     return(share_derivatives_wrt_mean_utility)
   }
 
+# compute derivatives of mean utility with respect to non-inear parameters
+compute_mean_utility_derivatives_wrt_theta_nonlinear <-
+  function(individual_share, X, p, nu, upsilon) {
+    # compute derivatives of share with respect to delta
+    share_derivatives_wrt_mean_utility <- compute_share_derivatives_wrt_mean_utility(individual_share)
+    # compute derivatives of share with respect to non-linear parameters
+    share_derivatives_wrt_theta_nonlinear <- compute_share_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
+    # derivatives
+    mean_utility_derivatives_wrt_theta_nonlinear <-
+      purrr::map2(share_derivatives_wrt_mean_utility, share_derivatives_wrt_theta_nonlinear, ~ - qr.solve(.x, .y))
+    return(mean_utility_derivatives_wrt_theta_nonlinear)
+  }
+
+# compute derivatives of the objective function with respect to non-linear parameters
+compute_objective_derivatives_wrt_theta_nonlinear <-
+  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+    # adjust parameters
+    theta_nonlinear_full <- rep(0, length(rl))
+    theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
+    theta_nonlinear_full <- matrix(theta_nonlinear_full)
+    # compute moments
+    # extract
+    sigma_nu <- theta_nonlinear_full[1:(length(theta_nonlinear_full) - 1)]
+    sigma_upsilon <- theta_nonlinear_full[length(theta_nonlinear_full)]
+    # invert share
+    mean_utility <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+    # compute individual share from delta
+    individual_share_delta <- 
+      compute_individual_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
+    # compute derivatives of mean utility with respect to non-linear parameters
+    mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear(individual_share, X, p, nu, upsilon)
+    # estimate the linear parameters
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+    # elicit xi
+    xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
+    # XZ
+    XZ <-
+      purrr::map2(X, Z, cbind)
+    # compute moments
+    moments <-
+      purrr::map2(xi_hat, XZ, crossprod) %>%
+      purrr::reduce(rbind)
+    moments <-
+      moments %>%
+      apply(., 2, mean) %>%
+      matrix()
+    # compute derivatives of moments
+    moments_derivatives <-
+      purrr::map2(mean_utility_derivatives_wrt_theta_nonlinear, XZ, crossprod) %>%
+      purrr::reduce(., `+`)
+    moments_derivatives <-
+      moments_derivatives / length(share)
+    # compute objective 
+    objective_derivatives <- moments_derivatives %*% solve(W, moments)
+    # return
+    return(objective_derivatives)
+  }
+
+# compute derivatives of the objective function with respect to non-linear parameters using numDeriv
+compute_objective_derivatives_wrt_theta_nonlinear_numDeriv <-
+  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+    # adjust parameters
+    theta_nonlinear_full <- rep(0, length(rl))
+    theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
+    theta_nonlinear_full <- matrix(theta_nonlinear_full)
+    
+    fn <- function(theta_nonlinear_full) {
+      # compute moments
+      moments <- compute_moments(theta_nonlinear_full, share, mean_utility, X, p, Z, nu, upsilon, W)
+      # compute objective 
+      objective <- crossprod(moments, solve(W, moments)) / 2
+      return(objective)
+    }
+    
+    objective_derivatives <-
+      numDeriv::grad(func = fn, x = theta_nonlinear_full)
+    
+    return(objective_derivatives)
+  }
+
