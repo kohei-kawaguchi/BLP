@@ -16,19 +16,21 @@ library(HighBLP)
 # number of markets
 T <- 100
 # total number of products
-J <- 10
+J <- 100
 # number of consumers for simulation
 N <- 1000
 # number of consumers for estimation
 M <- 1000
 # number of product characteristics excluding p
 K <- 5
+# number of xi draws for constructing optimal instruments
+R <- 1000
 
 #---------------------#
 # set hyper parameters
 #---------------------#
 # probability that a product is available
-prob_availability <- 0.7
+prob_availability <- 0.1
 # partial correlation between p and xi
 cor_xi_p <- 0.6
 # partial correlation between p and marginal cost shocks
@@ -114,6 +116,20 @@ theta_nonlinear <- matrix(c(sigma_nu, sigma_upsilon))
 # random l
 rl <- as.integer(theta_nonlinear > 0)
 
+#--------------------------------------------------------#
+# set initial instrumental variables and weighting matrix
+#--------------------------------------------------------#
+# make initial weight
+instruments <-
+  purrr::map2(X, Z, cbind)
+instruments <- 
+  instruments %>%
+  purrr::map(., ~ cbind(., .[, 2:ncol(.)]^2, .[, 2:ncol(.)]^3))
+instruments_vec <-
+  instruments %>%
+  purrr::reduce(., rbind)
+W <- crossprod(instruments_vec, instruments_vec) + diag(ncol(instruments_vec))
+
 #-------------------------------#
 # simulate endogenous vavriables
 #-------------------------------#
@@ -170,17 +186,6 @@ mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, p,
 mean_utility_rcpp <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(mean_utility) - unlist(mean_utility_rcpp)))
 
-# make initial weight
-instruments <-
-  purrr::map2(X, Z, cbind)
-instruments <- 
-  instruments %>%
-  purrr::map(., ~ cbind(., .[, 2:ncol(.)]^2, .[, 2:ncol(.)]^3))
-instruments_vec <-
-  instruments %>%
-  purrr::reduce(., rbind)
-W <- crossprod(instruments_vec, instruments_vec) + diag(ncol(instruments_vec))
-
 # estimate the linear parameters
 theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, instruments, W)
 theta_linear_hat_rcpp <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
@@ -225,6 +230,47 @@ objective_derivatives_wrt_theta_nonlinear_numDeriv <-
   compute_objective_derivatives_wrt_theta_nonlinear_numDeriv(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 max(abs(unlist(objective_derivatives_wrt_theta_nonlinear) - unlist(objective_derivatives_wrt_theta_nonlinear_numDeriv)))
 
+# resample xi
+xi_draw <- resample_xi(xi, R)
+
+# make optimal instruments
+make_optimal_instruments <-
+  function() {
+    # regress price
+    p_vec <- p %>%
+      purrr::reduce(., rbind)
+    X_vec <- X %>%
+      purrr::reduce(., rbind)
+    Z_vec <- Z %>%
+      purrr::reduce(., rbind)
+    XZ_vec <- cbind(X_vec, Z_vec)
+    res <- lm.fit(y = p_vec, x = XZ_vec)
+    p_vec_fit <- res$fitted.values
+    p_vec_fit <- ifelse(p_vec_fit < 1e-16, 1e-16, p_vec_fit)
+    start <- 1
+    end <- length(p[[1]])
+    p_fit <-
+      foreach (t = 1:length(p)) %do% {
+        p_fit_t <- matrix(p_vec_fit[start:end])
+        if (t < length(p)) {
+          start <- end + 1
+          end <- end + length(p[[t + 1]])
+        }
+        return(p_fit_t)
+      }
+    # draw shares
+    share_draw <-
+      foreach (r = 1:length(xi_draw)) %do% {
+        xi_draw_r <- xi_draw[[r]]
+        share_draw_r <- compute_share_rcpp(beta, alpha, sigma_nu, sigma_upsilon, X, p_fit, xi_draw_r, nu, upsilon)
+        return(share_draw_r)
+      }
+    
+  }
+
+#-------------------------#
+# run estimation procedure
+#-------------------------#
 # estiamte parameters
 solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) 
 theta_nonlinear_hat <- solution$par

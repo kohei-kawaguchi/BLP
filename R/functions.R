@@ -513,7 +513,7 @@ compute_covariance_theta <-
     # compute derivatives of moments wrt non-linear parameters
     G <-purrr::reduce(mean_utility_derivatives_wrt_theta_nonlinear, rbind)
     # compute derivatives of moments wrt linear parameters
-    G <- cbind(G, Xp)
+    G <- cbind(-Xp, G)
     
     G <- crossprod(instruments_vec, G) / nrow(instruments_vec)
     # compute asymptotic covariance of the estimator
@@ -524,4 +524,20 @@ compute_covariance_theta <-
     
     # return
     return(covariance)
+  }
+
+# resample xi
+resample_xi <-
+  function(xi, R) {
+    xi_vec <-
+      xi %>%
+      purrr::reduce(., rbind)
+    xi_draw <-
+      foreach (r = 1:R) %do% {
+        xi_draw_r <-
+          xi %>%
+          purrr::map(., ~ matrix(sample(xi_vec, nrow(.))))
+        return(xi_draw_r)
+      }
+    return(xi_draw)
   }
