@@ -9,6 +9,7 @@ library(magrittr)
 library(codetools)
 library(doParallel)
 library(HighBLP)
+registerDoParallel()
 
 #--------------#
 # set constants
@@ -16,19 +17,21 @@ library(HighBLP)
 # number of markets
 T <- 100
 # total number of products
-J <- 10
+J <- 100
 # number of consumers for simulation
 N <- 1000
 # number of consumers for estimation
 M <- 1000
 # number of product characteristics excluding p
-K <- 5
+K <- 2
+# number of xi draws for constructing optimal instruments
+R <- 1000
 
 #---------------------#
 # set hyper parameters
 #---------------------#
 # probability that a product is available
-prob_availability <- 0.7
+prob_availability <- 0.05
 # partial correlation between p and xi
 cor_xi_p <- 0.6
 # partial correlation between p and marginal cost shocks
@@ -45,6 +48,8 @@ availability <-
   foreach (t = 1:T) %do% {
     availability_t <- purrr::rbernoulli(J, p = prob_availability)
     availability_t <- which(availability_t)
+    availability_t <- c(1, 2, availability_t)
+    availability_t <- unique(availability_t)
     availability_t <- sort(availability_t)
     return(availability_t)
   }
@@ -114,6 +119,20 @@ theta_nonlinear <- matrix(c(sigma_nu, sigma_upsilon))
 # random l
 rl <- as.integer(theta_nonlinear > 0)
 
+#--------------------------------------------------------#
+# set initial instrumental variables and weighting matrix
+#--------------------------------------------------------#
+# make initial weight
+instruments <-
+  purrr::map2(X, Z, cbind)
+instruments <- 
+  instruments %>%
+  purrr::map(., ~ cbind(., .[, 2:ncol(.)]^2, .[, 2:ncol(.)]^3))
+instruments_vec <-
+  instruments %>%
+  purrr::reduce(., rbind)
+W <- crossprod(instruments_vec, instruments_vec) + diag(ncol(instruments_vec))
+
 #-------------------------------#
 # simulate endogenous vavriables
 #-------------------------------#
@@ -170,23 +189,9 @@ mean_utility <- invert_share(share, mean_utility, sigma_nu, sigma_upsilon, X, p,
 mean_utility_rcpp <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
 max(abs(unlist(mean_utility) - unlist(mean_utility_rcpp)))
 
-# make initial weight
-X_vec <- 
-  X %>%
-  purrr::reduce(rbind)
-X_vec_rcpp <- vstack_rcpp(X)
-max(abs(X_vec - X_vec_rcpp))
-Z_vec <-
-  Z %>%
-  purrr::reduce(rbind)
-XZ <- cbind(X_vec, Z_vec)
-XZ <- cbind(XZ, XZ[, 2:ncol(XZ)]^2, XZ[, 2:ncol(XZ)]^3)
-W <- crossprod(XZ, XZ)
-W <- diag(ncol(XZ))
-
 # estimate the linear parameters
-theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, Z, W)
-theta_linear_hat_rcpp <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, instruments, W)
+theta_linear_hat_rcpp <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
 cbind(theta_linear_hat, theta_linear, theta_linear_hat - theta_linear)
 max(abs(theta_linear_hat - theta_linear))
 max(abs(theta_linear_hat - theta_linear_hat_rcpp))
@@ -197,10 +202,10 @@ xi_hat_rcpp <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
 max(abs(unlist(xi_hat) - unlist(xi_hat_rcpp)))
 
 # compute moments
-moments <- compute_moments(theta_nonlinear, share, mean_utility, X, p, Z, nu, upsilon, W)
+moments <- compute_moments(theta_nonlinear, share, mean_utility, X, p, instruments, nu, upsilon, W)
 
 # compute objective function
-objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 
 # compute derivatives of share with respect to delta
 share_derivatives_wrt_mean_utility <- compute_share_derivatives_wrt_mean_utility(individual_share)
@@ -223,26 +228,61 @@ max(abs(unlist(mean_utility_derivatives_wrt_theta_nonlinear) - unlist(mean_utili
 
 # compute derivatives of the objective function with respect to non-linear parameters
 objective_derivatives_wrt_theta_nonlinear <-
-  compute_objective_derivatives_wrt_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+  compute_objective_derivatives_wrt_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 objective_derivatives_wrt_theta_nonlinear_numDeriv <-
-  compute_objective_derivatives_wrt_theta_nonlinear_numDeriv(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+  compute_objective_derivatives_wrt_theta_nonlinear_numDeriv(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 max(abs(unlist(objective_derivatives_wrt_theta_nonlinear) - unlist(objective_derivatives_wrt_theta_nonlinear_numDeriv)))
 
-# estiamte parameters
-solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) 
+# resample xi
+xi_draw <- resample_xi(xi, R)
+
+#-------------------------#
+# make optimal instruments
+#-------------------------#
+optimal_instruments <- make_optimal_instruments(beta, alpha, sigma_nu, sigma_upsilon, X, Z, p, xi, nu, upsilon, R)
+optimal_instruments_vec <-
+  optimal_instruments %>%
+  purrr::reduce(., rbind)
+W_optimal <- crossprod(optimal_instruments_vec, optimal_instruments_vec) + diag(ncol(optimal_instruments_vec))
+# compute efficient weighting matrix
+W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_optimal)
+# compute objective function
+objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_efficient)
+objective
+objective_derivatives_wrt_theta_nonlinear <-
+  compute_objective_derivatives_wrt_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_efficient)
+objective_derivatives_wrt_theta_nonlinear
+
+#-------------------------#
+# run estimation procedure
+#-------------------------#
+# estiamte parameters parameters with initial instruments and weighting matrix
+solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W, method = "Nelder-Mead") 
 theta_nonlinear_hat <- solution$par
 max(abs(theta_nonlinear_hat - theta_nonlinear))
-
-# compute efficient weighting matrix
-W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
-
+theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
 # compute standard errors
-covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
-
+covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 se_theta <- sqrt(diag(covariance_theta))
-theta <- c(beta, alpha, theta_nonlinear)
+theta <- c(theta_linear, theta_nonlinear)
+covariance_theta_hat <- compute_covariance_theta(theta_nonlinear_hat, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
+se_theta_hat <- sqrt(diag(covariance_theta_hat))
+theta_hat <- c(theta_linear_hat, theta_nonlinear_hat)
+cbind(theta, se_theta, (abs(theta) > 1.96 * se_theta), theta_hat, se_theta_hat, (abs(theta_hat) > 1.96 * se_theta_hat))
 
-
+# estimate parameters with optimal instruments and efficient weighting matrix
+solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_efficient, method = "Nelder-Mead") 
+theta_nonlinear_hat <- solution$par
+max(abs(theta_nonlinear_hat - theta_nonlinear))
+theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
+# compute standard errors
+covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
+se_theta <- sqrt(diag(covariance_theta))
+theta <- c(theta_linear, theta_nonlinear)
+covariance_theta_hat <- compute_covariance_theta(theta_nonlinear_hat, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
+se_theta_hat <- sqrt(diag(covariance_theta_hat))
+theta_hat <- c(theta_linear_hat, theta_nonlinear_hat)
+cbind(theta, se_theta, (abs(theta) > 1.96 * se_theta), theta_hat, se_theta_hat, (abs(theta_hat) > 1.96 * se_theta_hat))
 
 
 
