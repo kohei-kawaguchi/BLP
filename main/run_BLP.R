@@ -9,6 +9,7 @@ library(magrittr)
 library(codetools)
 library(doParallel)
 library(HighBLP)
+registerDoParallel()
 
 #--------------#
 # set constants
@@ -22,7 +23,7 @@ N <- 1000
 # number of consumers for estimation
 M <- 1000
 # number of product characteristics excluding p
-K <- 5
+K <- 2
 # number of xi draws for constructing optimal instruments
 R <- 1000
 
@@ -30,7 +31,7 @@ R <- 1000
 # set hyper parameters
 #---------------------#
 # probability that a product is available
-prob_availability <- 0.1
+prob_availability <- 0.05
 # partial correlation between p and xi
 cor_xi_p <- 0.6
 # partial correlation between p and marginal cost shocks
@@ -47,6 +48,8 @@ availability <-
   foreach (t = 1:T) %do% {
     availability_t <- purrr::rbernoulli(J, p = prob_availability)
     availability_t <- which(availability_t)
+    availability_t <- c(1, 2, availability_t)
+    availability_t <- unique(availability_t)
     availability_t <- sort(availability_t)
     return(availability_t)
   }
@@ -233,59 +236,53 @@ max(abs(unlist(objective_derivatives_wrt_theta_nonlinear) - unlist(objective_der
 # resample xi
 xi_draw <- resample_xi(xi, R)
 
+#-------------------------#
 # make optimal instruments
-make_optimal_instruments <-
-  function() {
-    # regress price
-    p_vec <- p %>%
-      purrr::reduce(., rbind)
-    X_vec <- X %>%
-      purrr::reduce(., rbind)
-    Z_vec <- Z %>%
-      purrr::reduce(., rbind)
-    XZ_vec <- cbind(X_vec, Z_vec)
-    res <- lm.fit(y = p_vec, x = XZ_vec)
-    p_vec_fit <- res$fitted.values
-    p_vec_fit <- ifelse(p_vec_fit < 1e-16, 1e-16, p_vec_fit)
-    start <- 1
-    end <- length(p[[1]])
-    p_fit <-
-      foreach (t = 1:length(p)) %do% {
-        p_fit_t <- matrix(p_vec_fit[start:end])
-        if (t < length(p)) {
-          start <- end + 1
-          end <- end + length(p[[t + 1]])
-        }
-        return(p_fit_t)
-      }
-    # draw shares
-    share_draw <-
-      foreach (r = 1:length(xi_draw)) %do% {
-        xi_draw_r <- xi_draw[[r]]
-        share_draw_r <- compute_share_rcpp(beta, alpha, sigma_nu, sigma_upsilon, X, p_fit, xi_draw_r, nu, upsilon)
-        return(share_draw_r)
-      }
-    
-  }
+#-------------------------#
+optimal_instruments <- make_optimal_instruments(beta, alpha, sigma_nu, sigma_upsilon, X, Z, p, xi, nu, upsilon, R)
+optimal_instruments_vec <-
+  optimal_instruments %>%
+  purrr::reduce(., rbind)
+W_optimal <- crossprod(optimal_instruments_vec, optimal_instruments_vec) + diag(ncol(optimal_instruments_vec))
+# compute efficient weighting matrix
+W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_optimal)
+# compute objective function
+objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_efficient)
+objective
+objective_derivatives_wrt_theta_nonlinear <-
+  compute_objective_derivatives_wrt_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_efficient)
+objective_derivatives_wrt_theta_nonlinear
 
 #-------------------------#
 # run estimation procedure
 #-------------------------#
-# estiamte parameters
-solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) 
+# estiamte parameters parameters with initial instruments and weighting matrix
+solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W, method = "Nelder-Mead") 
 theta_nonlinear_hat <- solution$par
 max(abs(theta_nonlinear_hat - theta_nonlinear))
-
-# compute efficient weighting matrix
-W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
-
+theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
 # compute standard errors
 covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
-
 se_theta <- sqrt(diag(covariance_theta))
-theta <- c(beta, alpha, theta_nonlinear)
-cbind(theta, se_theta)
+theta <- c(theta_linear, theta_nonlinear)
+covariance_theta_hat <- compute_covariance_theta(theta_nonlinear_hat, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
+se_theta_hat <- sqrt(diag(covariance_theta_hat))
+theta_hat <- c(theta_linear_hat, theta_nonlinear_hat)
+cbind(theta, se_theta, (abs(theta) > 1.96 * se_theta), theta_hat, se_theta_hat, (abs(theta_hat) > 1.96 * se_theta_hat))
 
+# estimate parameters with optimal instruments and efficient weighting matrix
+solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_efficient, method = "Nelder-Mead") 
+theta_nonlinear_hat <- solution$par
+max(abs(theta_nonlinear_hat - theta_nonlinear))
+theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
+# compute standard errors
+covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
+se_theta <- sqrt(diag(covariance_theta))
+theta <- c(theta_linear, theta_nonlinear)
+covariance_theta_hat <- compute_covariance_theta(theta_nonlinear_hat, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
+se_theta_hat <- sqrt(diag(covariance_theta_hat))
+theta_hat <- c(theta_linear_hat, theta_nonlinear_hat)
+cbind(theta, se_theta, (abs(theta) > 1.96 * se_theta), theta_hat, se_theta_hat, (abs(theta_hat) > 1.96 * se_theta_hat))
 
 
 

@@ -218,12 +218,14 @@ compute_objective <-
 
 # estiamte parameters
 estimate_parameters <-
-  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W, method) {
     solution <-
       optim(
         par = theta_nonlinear,
         fn = compute_objective,
-        method = "Nelder-Mead",
+        # gr = compute_objective_derivatives_wrt_theta_nonlinear,
+        method = method,
+        control = list(trace = 3),
         rl = rl,
         share = share,
         mean_utility = mean_utility,
@@ -540,4 +542,61 @@ resample_xi <-
         return(xi_draw_r)
       }
     return(xi_draw)
+  }
+
+# make optimal instruments
+make_optimal_instruments <-
+  function(beta, alpha, sigma_nu, sigma_upsilon, X, Z, p, xi, nu, upsilon, R) {
+    # resample xi
+    xi_draw <- resample_xi(xi, R)
+    # regress price
+    p_vec <- p %>%
+      purrr::reduce(., rbind)
+    X_vec <- X %>%
+      purrr::reduce(., rbind)
+    Z_vec <- Z %>%
+      purrr::reduce(., rbind)
+    XZ_vec <- cbind(X_vec, Z_vec)
+    res <- lm.fit(y = p_vec, x = XZ_vec)
+    p_vec_fit <- res$fitted.values
+    p_vec_fit <- ifelse(p_vec_fit < 1e-16, 1e-16, p_vec_fit)
+    start <- 1
+    end <- length(p[[1]])
+    p_fit <-
+      foreach (t = 1:length(p)) %do% {
+        p_fit_t <- matrix(p_vec_fit[start:end])
+        if (t < length(p)) {
+          start <- end + 1
+          end <- end + length(p[[t + 1]])
+        }
+        return(p_fit_t)
+      }
+    Xp_fit <-
+      purrr::map2(X, p_fit, cbind) 
+    # draw mean utility derivatives 
+    mean_utility_derivatives_wrt_theta_nonlinear_draw <-
+      foreach (r = 1:length(xi_draw)) %dopar% {
+        xi_draw_r <- xi_draw[[r]]
+        individual_share_draw_r <-
+          compute_individual_share_rcpp(beta, alpha, sigma_nu, sigma_upsilon, X, p_fit, xi_draw_r, nu, upsilon)
+        mean_utility_derivatives_wrt_theta_nonlinear_draw_r <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share_draw_r, X, p_fit, nu, upsilon)
+        return(mean_utility_derivatives_wrt_theta_nonlinear_draw_r)
+      }
+    # construct optimal instruments
+    optimal_instruments_draw <-
+      foreach (r = 1:length(xi_draw)) %dopar% {
+        mean_utility_derivatives_wrt_theta_nonlinear_draw_r <- mean_utility_derivatives_wrt_theta_nonlinear_draw[[r]]
+        optimal_instruments_r <-
+          purrr::map2(Xp_fit, mean_utility_derivatives_wrt_theta_nonlinear_draw_r, ~ cbind(-.x, .y))
+        return(optimal_instruments_r)
+      }
+    optimal_instruments <- optimal_instruments_draw[[1]]
+    for (r in 2:length(xi_draw)) {
+      optimal_instruments <-
+        purrr::map2(optimal_instruments, optimal_instruments_draw[[r]], `+`)
+    }
+    optimal_instruments <- 
+      optimal_instruments %>%
+      purrr::map(., ~ ./ length(xi_draw))
+    return(optimal_instruments)
   }
