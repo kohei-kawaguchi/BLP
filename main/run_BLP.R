@@ -243,6 +243,7 @@ optimal_instruments <- make_optimal_instruments(beta, alpha, sigma_nu, sigma_ups
 optimal_instruments_vec <-
   optimal_instruments %>%
   purrr::reduce(., rbind)
+
 W_optimal <- crossprod(optimal_instruments_vec, optimal_instruments_vec) + diag(ncol(optimal_instruments_vec))
 # compute efficient weighting matrix
 W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, optimal_instruments, nu, upsilon, W_optimal)
