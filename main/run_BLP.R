@@ -171,22 +171,19 @@ mean_utility_rcpp <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsi
 max(abs(unlist(mean_utility) - unlist(mean_utility_rcpp)))
 
 # make initial weight
-X_vec <- 
-  X %>%
-  purrr::reduce(rbind)
-X_vec_rcpp <- vstack_rcpp(X)
-max(abs(X_vec - X_vec_rcpp))
-Z_vec <-
-  Z %>%
-  purrr::reduce(rbind)
-XZ <- cbind(X_vec, Z_vec)
-XZ <- cbind(XZ, XZ[, 2:ncol(XZ)]^2, XZ[, 2:ncol(XZ)]^3)
-W <- crossprod(XZ, XZ)
-W <- diag(ncol(XZ))
+instruments <-
+  purrr::map2(X, Z, cbind)
+instruments <- 
+  instruments %>%
+  purrr::map(., ~ cbind(., .[, 2:ncol(.)]^2, .[, 2:ncol(.)]^3))
+instruments_vec <-
+  instruments %>%
+  purrr::reduce(., rbind)
+W <- crossprod(instruments_vec, instruments_vec) + diag(ncol(instruments_vec))
 
 # estimate the linear parameters
-theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, Z, W)
-theta_linear_hat_rcpp <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+theta_linear_hat <- estimate_linear_parameters(mean_utility, X, p, instruments, W)
+theta_linear_hat_rcpp <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
 cbind(theta_linear_hat, theta_linear, theta_linear_hat - theta_linear)
 max(abs(theta_linear_hat - theta_linear))
 max(abs(theta_linear_hat - theta_linear_hat_rcpp))
@@ -197,10 +194,10 @@ xi_hat_rcpp <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
 max(abs(unlist(xi_hat) - unlist(xi_hat_rcpp)))
 
 # compute moments
-moments <- compute_moments(theta_nonlinear, share, mean_utility, X, p, Z, nu, upsilon, W)
+moments <- compute_moments(theta_nonlinear, share, mean_utility, X, p, instruments, nu, upsilon, W)
 
 # compute objective function
-objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+objective <- compute_objective(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 
 # compute derivatives of share with respect to delta
 share_derivatives_wrt_mean_utility <- compute_share_derivatives_wrt_mean_utility(individual_share)
@@ -223,25 +220,25 @@ max(abs(unlist(mean_utility_derivatives_wrt_theta_nonlinear) - unlist(mean_utili
 
 # compute derivatives of the objective function with respect to non-linear parameters
 objective_derivatives_wrt_theta_nonlinear <-
-  compute_objective_derivatives_wrt_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+  compute_objective_derivatives_wrt_theta_nonlinear(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 objective_derivatives_wrt_theta_nonlinear_numDeriv <-
-  compute_objective_derivatives_wrt_theta_nonlinear_numDeriv(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+  compute_objective_derivatives_wrt_theta_nonlinear_numDeriv(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 max(abs(unlist(objective_derivatives_wrt_theta_nonlinear) - unlist(objective_derivatives_wrt_theta_nonlinear_numDeriv)))
 
 # estiamte parameters
-solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) 
+solution <- estimate_parameters(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) 
 theta_nonlinear_hat <- solution$par
 max(abs(theta_nonlinear_hat - theta_nonlinear))
 
 # compute efficient weighting matrix
-W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+W_efficient <- compute_efficient_weighting_matrix(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 
 # compute standard errors
-covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W)
+covariance_theta <- compute_covariance_theta(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W)
 
 se_theta <- sqrt(diag(covariance_theta))
 theta <- c(beta, alpha, theta_nonlinear)
-
+cbind(theta, se_theta)
 
 
 

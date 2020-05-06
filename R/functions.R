@@ -144,7 +144,7 @@ invert_share <-
 
 # estimate the linear parameters
 estimate_linear_parameters <-
-  function(mean_utility, X, p, Z, W) {
+  function(mean_utility, X, p, instruments, W) {
     mean_utility_vec <- 
       mean_utility %>%
       purrr::reduce(rbind)
@@ -154,14 +154,12 @@ estimate_linear_parameters <-
     p_vec <-
       p %>%
       purrr::reduce(rbind)
-    Z_vec <-
-      Z %>%
-      purrr::reduce(rbind)
     XP <- cbind(X_vec, p_vec)
-    XZ <- cbind(X_vec, Z_vec)
-    XZ <- cbind(XZ, XZ[, 2:ncol(XZ)]^2, XZ[, 2:ncol(XZ)]^3)
-    A <- crossprod(XP, XZ) %*% qr.solve(W, crossprod(XZ, XP))
-    b <- crossprod(XP, XZ) %*% qr.solve(W, crossprod(XZ, mean_utility_vec))
+    instruments_vec <-
+      instruments %>%
+      purrr::reduce(., rbind)
+    A <- crossprod(XP, instruments_vec) %*% qr.solve(W, crossprod(instruments_vec, XP))
+    b <- crossprod(XP, instruments_vec) %*% qr.solve(W, crossprod(instruments_vec, mean_utility_vec))
     theta_linear_hat <- qr.solve(A, b)
     return(theta_linear_hat)
   }
@@ -182,25 +180,19 @@ elicit_xi <-
 
 # compute moments
 compute_moments <-
-  function(theta_nonlinear, share, mean_utility, X, p, Z, nu, upsilon, W) {
+  function(theta_nonlinear, share, mean_utility, X, p, instruments, nu, upsilon, W) {
     # extract
     sigma_nu <- theta_nonlinear[1:(length(theta_nonlinear) - 1)]
     sigma_upsilon <- theta_nonlinear[length(theta_nonlinear)]
     # invert share
     mean_utility <- invert_share_rcpp(share, mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
     # estimate the linear parameters
-    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
     # elicit xi
     xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
-    # XZ
-    XZ <-
-      purrr::map2(X, Z, cbind)
-    XZ <- 
-      XZ %>%
-      purrr::map(., ~ cbind(., .[, 2:ncol(.)]^2, .[, 2:ncol(.)]^3))
     # compute moments
     moments <-
-      purrr::map2(xi_hat, XZ, crossprod) %>%
+      purrr::map2(xi_hat, instruments, crossprod) %>%
       purrr::reduce(rbind)
     moments <-
       moments %>%
@@ -212,13 +204,13 @@ compute_moments <-
 
 # compute objective function
 compute_objective <-
-  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) {
     # adjust parameters
     theta_nonlinear_full <- rep(0, length(rl))
     theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
     theta_nonlinear_full <- matrix(theta_nonlinear_full)
     # compute moments
-    moments <- compute_moments(theta_nonlinear_full, share, mean_utility, X, p, Z, nu, upsilon, W)
+    moments <- compute_moments(theta_nonlinear_full, share, mean_utility, X, p, instruments, nu, upsilon, W)
     # compute objective 
     objective <- crossprod(moments, solve(W, moments)) / 2
     return(objective)
@@ -226,7 +218,7 @@ compute_objective <-
 
 # estiamte parameters
 estimate_parameters <-
-  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) {
     solution <-
       optim(
         par = theta_nonlinear,
@@ -237,7 +229,7 @@ estimate_parameters <-
         mean_utility = mean_utility,
         X = X,
         p = p,
-        Z = Z,
+        instruments = instruments,
         nu = nu,
         upsilon = upsilon,
         W = W
@@ -381,7 +373,7 @@ compute_mean_utility_derivatives_wrt_theta_nonlinear <-
 
 # compute derivatives of the objective function with respect to non-linear parameters
 compute_objective_derivatives_wrt_theta_nonlinear <-
-  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) {
     # adjust parameters
     theta_nonlinear_full <- rep(0, length(rl))
     theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
@@ -398,18 +390,12 @@ compute_objective_derivatives_wrt_theta_nonlinear <-
     # compute derivatives of mean utility with respect to non-linear parameters
     mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon)
     # estimate the linear parameters
-    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
     # elicit xi
     xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
-    # XZ
-    XZ <-
-      purrr::map2(X, Z, cbind)
-    XZ <- 
-      XZ %>%
-      purrr::map(., ~ cbind(., .[, 2:ncol(.)]^2, .[, 2:ncol(.)]^3))
     # compute moments
     moments <-
-      purrr::map2(xi_hat, XZ, crossprod) %>%
+      purrr::map2(xi_hat, instruments, crossprod) %>%
       purrr::reduce(rbind)
     moments <-
       moments %>%
@@ -417,7 +403,7 @@ compute_objective_derivatives_wrt_theta_nonlinear <-
       matrix()
     # compute derivatives of moments
     moments_derivatives <-
-      purrr::map2(mean_utility_derivatives_wrt_theta_nonlinear, XZ, crossprod) %>%
+      purrr::map2(mean_utility_derivatives_wrt_theta_nonlinear, instruments, crossprod) %>%
       purrr::reduce(., `+`)
     moments_derivatives <-
       moments_derivatives / length(share)
@@ -429,7 +415,7 @@ compute_objective_derivatives_wrt_theta_nonlinear <-
 
 # compute derivatives of the objective function with respect to non-linear parameters using numDeriv
 compute_objective_derivatives_wrt_theta_nonlinear_numDeriv <-
-  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) {
     # adjust parameters
     theta_nonlinear_full <- rep(0, length(rl))
     theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
@@ -437,7 +423,7 @@ compute_objective_derivatives_wrt_theta_nonlinear_numDeriv <-
     
     fn <- function(theta_nonlinear_full) {
       # compute moments
-      moments <- compute_moments(theta_nonlinear_full, share, mean_utility, X, p, Z, nu, upsilon, W)
+      moments <- compute_moments(theta_nonlinear_full, share, mean_utility, X, p, instruments, nu, upsilon, W)
       # compute objective 
       objective <- crossprod(moments, solve(W, moments)) / 2
       return(objective)
@@ -451,7 +437,7 @@ compute_objective_derivatives_wrt_theta_nonlinear_numDeriv <-
 
 # compute efficient weighting matrix
 compute_efficient_weighting_matrix <-
-  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) {
     # adjust parameters
     theta_nonlinear_full <- rep(0, length(rl))
     theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
@@ -468,22 +454,20 @@ compute_efficient_weighting_matrix <-
     # compute derivatives of mean utility with respect to non-linear parameters
     mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon)
     # estimate the linear parameters
-    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
     # elicit xi
     xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
     
-    # XZ
-    XZ <-
-      purrr::map2(X, Z, cbind) %>%
+    instruments_vec <-
+      instruments %>%
       purrr::reduce(., rbind)
-    XZ <- cbind(XZ, XZ[, 2:ncol(XZ)]^2, XZ[, 2:ncol(XZ)]^3)
     # compute variance of moments
     moments <-
       xi_hat %>%
       purrr::reduce(rbind)
-    moments <- moments %*% matrix(rep(1, ncol(XZ)), nrow = 1)
-    moments <- moments *XZ
-    Omega <- crossprod(moments, moments) / nrow(XZ)
+    moments <- moments %*% matrix(rep(1, ncol(instruments_vec)), nrow = 1)
+    moments <- moments * instruments_vec
+    Omega <- crossprod(moments, moments) / nrow(instruments_vec)
     
     # return
     return(Omega)
@@ -491,7 +475,7 @@ compute_efficient_weighting_matrix <-
 
 # compute standard errors
 compute_covariance_theta <-
-  function(theta_nonlinear, rl, share, mean_utility, X, p, Z, nu, upsilon, W) {
+  function(theta_nonlinear, rl, share, mean_utility, X, p, instruments, nu, upsilon, W) {
     # adjust parameters
     theta_nonlinear_full <- rep(0, length(rl))
     theta_nonlinear_full[which(rl == 1)] <- theta_nonlinear
@@ -508,16 +492,13 @@ compute_covariance_theta <-
     # compute derivatives of mean utility with respect to non-linear parameters
     mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon)
     # estimate the linear parameters
-    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, Z, W)
+    theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
     # elicit xi
     xi_hat <- elicit_xi_rcpp(theta_linear_hat, mean_utility, X, p)
     
-    # XZ
-    XZ <-
-      purrr::map2(X, Z, cbind) %>%
+    instruments_vec <-
+      instruments %>%
       purrr::reduce(., rbind)
-    XZ <-
-      cbind(XZ, XZ[, 2:ncol(XZ)]^2, XZ[, 2:ncol(XZ)]^3)
     Xp <-
       purrr::map2(X, p, cbind) %>%
       purrr::reduce(., rbind)
@@ -525,21 +506,21 @@ compute_covariance_theta <-
     moments <-
       xi_hat %>%
       purrr::reduce(rbind)
-    moments <- moments %*% matrix(rep(1, ncol(XZ)), nrow = 1)
-    moments <- moments * XZ
-    Omega <- crossprod(moments, moments) / nrow(XZ)
+    moments <- moments %*% matrix(rep(1, ncol(instruments_vec)), nrow = 1)
+    moments <- moments * instruments_vec
+    Omega <- crossprod(moments, moments) / nrow(instruments_vec)
     
     # compute derivatives of moments wrt non-linear parameters
     G <-purrr::reduce(mean_utility_derivatives_wrt_theta_nonlinear, rbind)
     # compute derivatives of moments wrt linear parameters
     G <- cbind(G, Xp)
     
-    G <- crossprod(XZ, G) / nrow(XZ)
+    G <- crossprod(instruments_vec, G) / nrow(instruments_vec)
     # compute asymptotic covariance of the estimator
     L <- crossprod(G, qr.solve(W, G))
     C <- crossprod(G, qr.solve(W, Omega)) %*% qr.solve(W, G)
     covariance <- qr.solve(L, C) %*% qr.solve(L)
-    covariance <- covariance / nrow(XZ)
+    covariance <- covariance / nrow(instruments_vec)
     
     # return
     return(covariance)
