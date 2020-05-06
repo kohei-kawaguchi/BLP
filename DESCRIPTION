@@ -9,3 +9,4 @@ Description: More about what it does (maybe more than one line)
 License: What license is it under?
 Imports: Rcpp (>= 1.0.3)
 LinkingTo: Rcpp, RcppEigen
+RoxygenNote: 7.0.2
