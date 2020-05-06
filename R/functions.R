@@ -600,3 +600,4 @@ make_optimal_instruments <-
       purrr::map(., ~ ./ length(xi_draw))
     return(optimal_instruments)
   }
+
