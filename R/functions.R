@@ -454,7 +454,7 @@ compute_efficient_weighting_matrix <-
     individual_share_delta <- 
       compute_individual_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
     # compute derivatives of mean utility with respect to non-linear parameters
-    mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon)
+    mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share_delta, X, p, nu, upsilon)
     # estimate the linear parameters
     theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
     # elicit xi
@@ -492,7 +492,7 @@ compute_covariance_theta <-
     individual_share_delta <- 
       compute_individual_share_delta_rcpp(mean_utility, sigma_nu, sigma_upsilon, X, p, nu, upsilon)
     # compute derivatives of mean utility with respect to non-linear parameters
-    mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share, X, p, nu, upsilon)
+    mean_utility_derivatives_wrt_theta_nonlinear <- compute_mean_utility_derivatives_wrt_theta_nonlinear_rcpp(individual_share_delta, X, p, nu, upsilon)
     # estimate the linear parameters
     theta_linear_hat <- estimate_linear_parameters_rcpp(mean_utility, X, p, instruments, W)
     # elicit xi
